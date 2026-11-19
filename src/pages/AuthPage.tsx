@@ -1,6 +1,16 @@
 import React, { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { ArrowLeft, CheckCircle2, Mail, RefreshCw, ShieldCheck, AlertCircle } from 'lucide-react';
+import {
+  ArrowLeft,
+  Check,
+  CheckCircle2,
+  Copy,
+  ExternalLink,
+  Mail,
+  RefreshCw,
+  ShieldCheck,
+  AlertCircle,
+} from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import { useToast } from '../contexts/ToastContext';
 import { GENERATED_IMAGES } from '../data/demoData';
@@ -32,6 +42,8 @@ export function AuthPage() {
   const [fullName, setFullName] = useState('');
   const [busy, setBusy] = useState(false);
   const [authNotice, setAuthNotice] = useState<string | null>(null);
+  const [unauthorizedHost, setUnauthorizedHost] = useState<string | null>(null);
+  const [copiedHost, setCopiedHost] = useState(false);
 
   const [displayName, setDisplayName] = useState(
     userPublic?.displayName || firebaseUser?.displayName || ''
@@ -64,15 +76,49 @@ export function AuthPage() {
   const handleGoogle = async () => {
     setBusy(true);
     setAuthNotice(null);
+    setUnauthorizedHost(null);
     try {
       await signInWithGoogle();
       showToast('Signed in with Google');
     } catch (err) {
+      const code = (err as { code?: string })?.code || '';
       const msg = err instanceof Error ? err.message : 'Google sign-in failed.';
-      setAuthNotice(msg);
-      showToast('Sign-in failed', 'error', msg);
+      if (code === 'auth/unauthorized-domain' || msg.includes('unauthorized-domain')) {
+        const currentHost =
+          typeof window !== 'undefined' ? window.location.hostname : 'this domain';
+        setUnauthorizedHost(currentHost);
+        setAuthNotice(
+          `The domain "${currentHost}" is not listed under Firebase Authentication Authorized Domains.`
+        );
+        showToast(
+          'Domain not authorized',
+          'error',
+          `Add ${currentHost} in Firebase Console → Authentication → Settings → Authorized domains.`
+        );
+      } else if (code === 'auth/popup-blocked') {
+        setAuthNotice(
+          'Your browser blocked the Google sign-in popup. Please allow popups for this site and try again.'
+        );
+        showToast('Popup blocked', 'error', 'Allow popups and try again.');
+      } else if (code === 'auth/popup-closed-by-user') {
+        setAuthNotice('Google sign-in was cancelled before completion. Try again when ready.');
+      } else {
+        setAuthNotice(msg);
+        showToast('Sign-in failed', 'error', msg);
+      }
     } finally {
       setBusy(false);
+    }
+  };
+
+  const handleCopyHost = async (host: string) => {
+    try {
+      await navigator.clipboard.writeText(host);
+      setCopiedHost(true);
+      showToast('Domain copied', 'info', host);
+      setTimeout(() => setCopiedHost(false), 2000);
+    } catch {
+      showToast('Copy failed', 'error', 'Please select and copy the domain text manually.');
     }
   };
 
@@ -80,6 +126,7 @@ export function AuthPage() {
     e.preventDefault();
     setBusy(true);
     setAuthNotice(null);
+    setUnauthorizedHost(null);
     try {
       if (tab === 'login') {
         await loginWithEmail(email, password);
@@ -99,8 +146,16 @@ export function AuthPage() {
         showToast('Account created', 'info', 'Please check your inbox to verify your email.');
       }
     } catch (err) {
+      const code = (err as { code?: string })?.code || '';
       const msg = err instanceof Error ? err.message : 'Authentication error.';
-      if (msg.includes('operation-not-allowed')) {
+      if (code === 'auth/unauthorized-domain' || msg.includes('unauthorized-domain')) {
+        const currentHost =
+          typeof window !== 'undefined' ? window.location.hostname : 'this domain';
+        setUnauthorizedHost(currentHost);
+        setAuthNotice(
+          `The domain "${currentHost}" is not listed under Firebase Authentication Authorized Domains.`
+        );
+      } else if (msg.includes('operation-not-allowed')) {
         setAuthNotice(
           'Email/Password sign-in is not yet enabled in Firebase Console (Authentication -> Sign-in method -> Email/Password). Use "Continue with Google" above for instant access!'
         );
@@ -570,9 +625,53 @@ export function AuthPage() {
             </div>
 
             {authNotice && (
-              <div className="mb-4 p-3.5 rounded-xl bg-amber-50 dark:bg-amber-950/50 border border-amber-200 dark:border-amber-900 text-xs text-amber-900 dark:text-amber-200 flex items-start gap-2.5">
-                <AlertCircle className="w-4 h-4 shrink-0 mt-0.5 text-amber-700 dark:text-amber-400" />
-                <span>{authNotice}</span>
+              <div className="mt-4 mb-4 p-4 rounded-xl bg-amber-50 dark:bg-amber-950/50 border border-amber-200 dark:border-amber-900 text-xs text-amber-900 dark:text-amber-200 space-y-2.5">
+                <div className="flex items-start gap-2.5">
+                  <AlertCircle className="w-4 h-4 shrink-0 mt-0.5 text-amber-700 dark:text-amber-400" />
+                  <span className="font-medium leading-relaxed">{authNotice}</span>
+                </div>
+                {unauthorizedHost && (
+                  <div className="pl-6 space-y-2 text-[11px] text-amber-800 dark:text-amber-300 leading-relaxed">
+                    <p>
+                      To allow Google sign-in on this URL, add the domain below in{' '}
+                      <strong>
+                        Firebase Console → Authentication → Settings → Authorized domains
+                      </strong>{' '}
+                      (project <code className="font-mono">boreal-intelligence-7v0ns</code>):
+                    </p>
+                    <div className="flex items-center justify-between gap-2 px-2.5 py-2 rounded-lg bg-white dark:bg-slate-950 border border-amber-200 dark:border-amber-800">
+                      <code className="font-mono text-[11px] text-slate-900 dark:text-slate-100 break-all">
+                        {unauthorizedHost}
+                      </code>
+                      <button
+                        type="button"
+                        onClick={() => handleCopyHost(unauthorizedHost)}
+                        className="inline-flex items-center gap-1 shrink-0 px-2 py-1 rounded-md bg-amber-100 dark:bg-amber-900/60 text-amber-900 dark:text-amber-100 font-semibold hover:bg-amber-200 dark:hover:bg-amber-800 transition-colors"
+                      >
+                        {copiedHost ? (
+                          <>
+                            <Check className="w-3 h-3" />
+                            Copied
+                          </>
+                        ) : (
+                          <>
+                            <Copy className="w-3 h-3" />
+                            Copy
+                          </>
+                        )}
+                      </button>
+                    </div>
+                    <a
+                      href="https://console.firebase.google.com/project/boreal-intelligence-7v0ns/authentication/settings"
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="inline-flex items-center gap-1.5 font-semibold text-violet-700 dark:text-violet-300 hover:underline"
+                    >
+                      Open Firebase Authorized Domains Settings
+                      <ExternalLink className="w-3 h-3" />
+                    </a>
+                  </div>
+                )}
               </div>
             )}
 
