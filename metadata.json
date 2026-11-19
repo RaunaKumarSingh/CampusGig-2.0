@@ -1,0 +1,6 @@
+{
+  "name": "CampusGig",
+  "description": "Peer-to-peer hyper-local campus micro-task marketplace exclusively for university students at DBS Global University, Dehradun.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

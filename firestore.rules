@@ -1,0 +1,758 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // Global default-deny safety net
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // --- Primitive Helpers ---
+    function isValidId(id) {
+      return id is string && id.size() >= 1 && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    function incoming() {
+      return request.resource.data;
+    }
+
+    function existing() {
+      return resource.data;
+    }
+
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isVerifiedAuth() {
+      return isSignedIn() && request.auth.token.email_verified == true;
+    }
+
+    function isOwner(userId) {
+      return isVerifiedAuth() && request.auth.uid == userId;
+    }
+
+    function isAdmin() {
+      return isVerifiedAuth() && (
+        request.auth.token.email == 'raunakagiaon0@gmail.com' ||
+        exists(/databases/$(database)/documents/admins/$(request.auth.uid))
+      );
+    }
+
+    function isNotSuspended() {
+      return !exists(/databases/$(database)/documents/users_public/$(request.auth.uid)) ||
+        get(/databases/$(database)/documents/users_public/$(request.auth.uid)).data.isSuspended != true;
+    }
+
+    function isVerifiedStudent() {
+      return exists(/databases/$(database)/documents/users_public/$(request.auth.uid)) &&
+        get(/databases/$(database)/documents/users_public/$(request.auth.uid)).data.verificationStatus == 'verified' &&
+        get(/databases/$(database)/documents/users_public/$(request.auth.uid)).data.isSuspended != true;
+    }
+
+    // --- Entity Validation Blueprints ---
+    function isValidUserPublic(data) {
+      return data.keys().hasAll([
+        'uid', 'displayName', 'role', 'verificationStatus', 'isSuspended',
+        'completedGigsCount', 'averageRating', 'ratingsCount', 'isDemo', 'createdAt', 'updatedAt'
+      ]) &&
+      data.keys().hasOnly([
+        'uid', 'displayName', 'photoUrl', 'role', 'posterType', 'university',
+        'course', 'department', 'academicYear', 'hostelStatus', 'skills', 'bio',
+        'verificationStatus', 'isSuspended', 'completedGigsCount', 'postedGigsCount',
+        'averageRating', 'ratingsCount', 'isDemo', 'createdAt', 'updatedAt'
+      ]) &&
+      isValidId(data.uid) &&
+      data.displayName is string && data.displayName.size() >= 2 && data.displayName.size() <= 80 &&
+      (!('photoUrl' in data) || (data.photoUrl is string && data.photoUrl.size() <= 500)) &&
+      data.role in ['student', 'poster', 'admin'] &&
+      (!('posterType' in data) || data.posterType in ['student', 'department', 'club', 'business', 'none']) &&
+      (!('university' in data) || (data.university is string && data.university.size() >= 2 && data.university.size() <= 120)) &&
+      (!('course' in data) || (data.course is string && data.course.size() <= 80)) &&
+      (!('department' in data) || (data.department is string && data.department.size() <= 80)) &&
+      (!('academicYear' in data) || (data.academicYear is string && data.academicYear.size() <= 30)) &&
+      (!('hostelStatus' in data) || data.hostelStatus in ['hostel_resident', 'day_scholar', 'campus_entity']) &&
+      (!('skills' in data) || (data.skills is list && data.skills.size() <= 12 && (data.skills.size() == 0 || (data.skills[0] is string && data.skills[0].size() <= 40)))) &&
+      (!('bio' in data) || (data.bio is string && data.bio.size() <= 400)) &&
+      data.verificationStatus in ['unverified', 'pending', 'verified', 'rejected'] &&
+      data.isSuspended is bool &&
+      data.completedGigsCount is number && data.completedGigsCount >= 0 &&
+      (!('postedGigsCount' in data) || (data.postedGigsCount is number && data.postedGigsCount >= 0)) &&
+      data.averageRating is number && data.averageRating >= 0 && data.averageRating <= 5 &&
+      data.ratingsCount is number && data.ratingsCount >= 0 &&
+      data.isDemo is bool &&
+      data.createdAt is timestamp &&
+      data.updatedAt is timestamp;
+    }
+
+    function isValidUserPrivate(data) {
+      return data.keys().hasAll([
+        'uid', 'universityEmail', 'studentId', 'mobileNumber', 'emailVerified', 'createdAt', 'updatedAt'
+      ]) &&
+      data.keys().hasOnly([
+        'uid', 'universityEmail', 'personalEmail', 'studentId', 'mobileNumber',
+        'emailVerified', 'idVerificationMethod', 'verificationNote', 'suspensionReason',
+        'upiId', 'createdAt', 'updatedAt'
+      ]) &&
+      isValidId(data.uid) &&
+      data.universityEmail is string && data.universityEmail.size() >= 3 && data.universityEmail.size() <= 120 &&
+      (!('personalEmail' in data) || (data.personalEmail is string && data.personalEmail.size() <= 120)) &&
+      data.studentId is string && data.studentId.size() >= 2 && data.studentId.size() <= 40 &&
+      data.mobileNumber is string && data.mobileNumber.size() >= 8 && data.mobileNumber.size() <= 20 &&
+      data.emailVerified is bool &&
+      (!('idVerificationMethod' in data) || data.idVerificationMethod in ['university_email', 'manual_id_review', 'none']) &&
+      (!('verificationNote' in data) || (data.verificationNote is string && data.verificationNote.size() <= 300)) &&
+      (!('suspensionReason' in data) || (data.suspensionReason is string && data.suspensionReason.size() <= 300)) &&
+      (!('upiId' in data) || (data.upiId is string && data.upiId.size() <= 80)) &&
+      data.createdAt is timestamp &&
+      data.updatedAt is timestamp;
+    }
+
+    function isValidAdminRecord(data) {
+      return data.keys().hasAll(['uid', 'email', 'createdAt']) &&
+      data.keys().hasOnly(['uid', 'email', 'grantedBy', 'createdAt']) &&
+      isValidId(data.uid) &&
+      data.email is string && data.email.size() >= 3 && data.email.size() <= 120 &&
+      (!('grantedBy' in data) || (data.grantedBy is string && data.grantedBy.size() <= 128)) &&
+      data.createdAt is timestamp;
+    }
+
+    function isValidTask(data) {
+      return data.keys().hasAll([
+        'posterId', 'posterName', 'posterVerified', 'posterType', 'title', 'category',
+        'description', 'location', 'budgetInr', 'estimatedDuration', 'deadline',
+        'workersRequired', 'status', 'applicantCount', 'isRemoved', 'isDemo',
+        'createdAt', 'updatedAt'
+      ]) &&
+      data.keys().hasOnly([
+        'posterId', 'posterName', 'posterAvatar', 'posterVerified', 'posterType', 'posterRating',
+        'title', 'category', 'description', 'responsibilities', 'location', 'budgetInr',
+        'estimatedDuration', 'durationMinutes', 'deadline', 'workersRequired', 'skillsRequired',
+        'additionalInstructions', 'attachmentLabel', 'status', 'assignedWorkerId', 'assignedWorkerName',
+        'applicantCount', 'completionProofNote', 'completionProofRef', 'cancellationReason',
+        'isRemoved', 'isDemo', 'createdAt', 'updatedAt'
+      ]) &&
+      isValidId(data.posterId) &&
+      data.posterName is string && data.posterName.size() >= 2 && data.posterName.size() <= 80 &&
+      (!('posterAvatar' in data) || (data.posterAvatar is string && data.posterAvatar.size() <= 500)) &&
+      data.posterVerified is bool &&
+      data.posterType in ['student', 'department', 'club', 'business'] &&
+      (!('posterRating' in data) || (data.posterRating is number && data.posterRating >= 0 && data.posterRating <= 5)) &&
+      data.title is string && data.title.size() >= 5 && data.title.size() <= 120 &&
+      data.category is string && data.category.size() >= 2 && data.category.size() <= 60 &&
+      data.description is string && data.description.size() >= 15 && data.description.size() <= 2000 &&
+      (!('responsibilities' in data) || (data.responsibilities is string && data.responsibilities.size() <= 1000)) &&
+      data.location is string && data.location.size() >= 2 && data.location.size() <= 120 &&
+      data.budgetInr is number && data.budgetInr >= 20 && data.budgetInr <= 50000 &&
+      data.estimatedDuration is string && data.estimatedDuration.size() >= 2 && data.estimatedDuration.size() <= 50 &&
+      (!('durationMinutes' in data) || (data.durationMinutes is number && data.durationMinutes >= 5 && data.durationMinutes <= 10080)) &&
+      data.deadline is string && data.deadline.size() >= 4 && data.deadline.size() <= 60 &&
+      data.workersRequired is number && data.workersRequired >= 1 && data.workersRequired <= 50 &&
+      (!('skillsRequired' in data) || (data.skillsRequired is list && data.skillsRequired.size() <= 10 && (data.skillsRequired.size() == 0 || (data.skillsRequired[0] is string && data.skillsRequired[0].size() <= 40)))) &&
+      (!('additionalInstructions' in data) || (data.additionalInstructions is string && data.additionalInstructions.size() <= 600)) &&
+      (!('attachmentLabel' in data) || (data.attachmentLabel is string && data.attachmentLabel.size() <= 200)) &&
+      data.status in ['open', 'accepted', 'in_progress', 'submitted', 'completed', 'cancelled', 'disputed'] &&
+      (!('assignedWorkerId' in data) || (data.assignedWorkerId is string && data.assignedWorkerId.size() <= 128)) &&
+      (!('assignedWorkerName' in data) || (data.assignedWorkerName is string && data.assignedWorkerName.size() <= 80)) &&
+      data.applicantCount is number && data.applicantCount >= 0 &&
+      (!('completionProofNote' in data) || (data.completionProofNote is string && data.completionProofNote.size() <= 600)) &&
+      (!('completionProofRef' in data) || (data.completionProofRef is string && data.completionProofRef.size() <= 300)) &&
+      (!('cancellationReason' in data) || (data.cancellationReason is string && data.cancellationReason.size() <= 300)) &&
+      data.isRemoved is bool &&
+      data.isDemo is bool &&
+      data.createdAt is timestamp &&
+      data.updatedAt is timestamp;
+    }
+
+    function isValidApplication(data) {
+      return data.keys().hasAll([
+        'taskId', 'taskTitle', 'taskBudgetInr', 'posterId', 'applicantId',
+        'applicantName', 'applicantVerified', 'message', 'status', 'isDemo',
+        'createdAt', 'updatedAt'
+      ]) &&
+      data.keys().hasOnly([
+        'taskId', 'taskTitle', 'taskBudgetInr', 'taskLocation', 'posterId',
+        'applicantId', 'applicantName', 'applicantAvatar', 'applicantCourse',
+        'applicantRating', 'applicantVerified', 'message', 'status', 'isDemo',
+        'createdAt', 'updatedAt'
+      ]) &&
+      isValidId(data.taskId) &&
+      data.taskTitle is string && data.taskTitle.size() >= 3 && data.taskTitle.size() <= 120 &&
+      data.taskBudgetInr is number && data.taskBudgetInr >= 20 &&
+      (!('taskLocation' in data) || (data.taskLocation is string && data.taskLocation.size() <= 120)) &&
+      isValidId(data.posterId) &&
+      isValidId(data.applicantId) &&
+      data.applicantName is string && data.applicantName.size() >= 2 && data.applicantName.size() <= 80 &&
+      (!('applicantAvatar' in data) || (data.applicantAvatar is string && data.applicantAvatar.size() <= 500)) &&
+      (!('applicantCourse' in data) || (data.applicantCourse is string && data.applicantCourse.size() <= 80)) &&
+      (!('applicantRating' in data) || (data.applicantRating is number && data.applicantRating >= 0 && data.applicantRating <= 5)) &&
+      data.applicantVerified is bool &&
+      data.message is string && data.message.size() >= 5 && data.message.size() <= 600 &&
+      data.status in ['pending', 'shortlisted', 'accepted', 'rejected', 'withdrawn'] &&
+      data.isDemo is bool &&
+      data.createdAt is timestamp &&
+      data.updatedAt is timestamp;
+    }
+
+    function isValidTransaction(data) {
+      return data.keys().hasAll([
+        'taskId', 'taskTitle', 'posterId', 'workerId', 'grossAmountInr',
+        'commissionRatePct', 'platformCommissionInr', 'workerPayoutInr',
+        'variableCostInr', 'netContributionInr', 'paymentMethod', 'status',
+        'isDemo', 'createdAt', 'updatedAt'
+      ]) &&
+      data.keys().hasOnly([
+        'taskId', 'taskTitle', 'taskCategory', 'posterId', 'posterName',
+        'workerId', 'workerName', 'grossAmountInr', 'commissionRatePct',
+        'platformCommissionInr', 'workerPayoutInr', 'variableCostInr',
+        'netContributionInr', 'paymentMethod', 'upiReference', 'status',
+        'isDemo', 'createdAt', 'updatedAt'
+      ]) &&
+      isValidId(data.taskId) &&
+      data.taskTitle is string && data.taskTitle.size() >= 3 && data.taskTitle.size() <= 120 &&
+      (!('taskCategory' in data) || (data.taskCategory is string && data.taskCategory.size() <= 60)) &&
+      isValidId(data.posterId) &&
+      (!('posterName' in data) || (data.posterName is string && data.posterName.size() <= 80)) &&
+      isValidId(data.workerId) &&
+      (!('workerName' in data) || (data.workerName is string && data.workerName.size() <= 80)) &&
+      data.grossAmountInr is number && data.grossAmountInr >= 20 &&
+      data.commissionRatePct is number && data.commissionRatePct >= 0 && data.commissionRatePct <= 50 &&
+      data.platformCommissionInr is number && data.platformCommissionInr >= 0 &&
+      data.workerPayoutInr is number && data.workerPayoutInr >= 0 &&
+      data.variableCostInr is number && data.variableCostInr >= 0 &&
+      data.netContributionInr is number &&
+      data.paymentMethod in ['upi_manual', 'demo_simulated', 'razorpay_ready'] &&
+      (!('upiReference' in data) || (data.upiReference is string && data.upiReference.size() <= 80)) &&
+      data.status in ['pending_confirmation', 'completed', 'disputed', 'refunded'] &&
+      data.isDemo is bool &&
+      data.createdAt is timestamp &&
+      data.updatedAt is timestamp;
+    }
+
+    function isValidNotification(data) {
+      return data.keys().hasAll([
+        'userId', 'type', 'title', 'body', 'isRead', 'isDemo', 'createdAt'
+      ]) &&
+      data.keys().hasOnly([
+        'userId', 'type', 'title', 'body', 'linkPath', 'relatedTaskId', 'isRead', 'isDemo', 'createdAt'
+      ]) &&
+      isValidId(data.userId) &&
+      data.type in ['application', 'acceptance', 'completion', 'payment', 'verification', 'dispute', 'message'] &&
+      data.title is string && data.title.size() >= 2 && data.title.size() <= 120 &&
+      data.body is string && data.body.size() >= 2 && data.body.size() <= 300 &&
+      (!('linkPath' in data) || (data.linkPath is string && data.linkPath.size() <= 120)) &&
+      (!('relatedTaskId' in data) || (data.relatedTaskId is string && data.relatedTaskId.size() <= 128)) &&
+      data.isRead is bool &&
+      data.isDemo is bool &&
+      data.createdAt is timestamp;
+    }
+
+    function isValidConversation(data) {
+      return data.keys().hasAll([
+        'taskId', 'taskTitle', 'posterId', 'workerId', 'participantIds', 'isDemo', 'createdAt', 'updatedAt'
+      ]) &&
+      data.keys().hasOnly([
+        'taskId', 'taskTitle', 'posterId', 'posterName', 'workerId', 'workerName',
+        'participantIds', 'lastMessage', 'isDemo', 'createdAt', 'updatedAt'
+      ]) &&
+      isValidId(data.taskId) &&
+      data.taskTitle is string && data.taskTitle.size() >= 2 && data.taskTitle.size() <= 120 &&
+      isValidId(data.posterId) &&
+      (!('posterName' in data) || (data.posterName is string && data.posterName.size() <= 80)) &&
+      isValidId(data.workerId) &&
+      (!('workerName' in data) || (data.workerName is string && data.workerName.size() <= 80)) &&
+      data.participantIds is list && data.participantIds.size() == 2 &&
+      data.participantIds[0] is string && data.participantIds[1] is string &&
+      data.posterId in data.participantIds && data.workerId in data.participantIds &&
+      (!('lastMessage' in data) || (data.lastMessage is string && data.lastMessage.size() <= 300)) &&
+      data.isDemo is bool &&
+      data.createdAt is timestamp &&
+      data.updatedAt is timestamp;
+    }
+
+    function isValidMessage(data) {
+      return data.keys().hasAll([
+        'conversationId', 'participantIds', 'senderId', 'senderName', 'text', 'isDemo', 'createdAt'
+      ]) &&
+      data.keys().hasOnly([
+        'conversationId', 'participantIds', 'senderId', 'senderName', 'text', 'isDemo', 'createdAt'
+      ]) &&
+      isValidId(data.conversationId) &&
+      data.participantIds is list && data.participantIds.size() == 2 &&
+      data.participantIds[0] is string && data.participantIds[1] is string &&
+      isValidId(data.senderId) &&
+      data.senderName is string && data.senderName.size() >= 1 && data.senderName.size() <= 80 &&
+      data.text is string && data.text.size() >= 1 && data.text.size() <= 1000 &&
+      data.isDemo is bool &&
+      data.createdAt is timestamp;
+    }
+
+    function isValidReview(data) {
+      return data.keys().hasAll([
+        'taskId', 'reviewerId', 'reviewerName', 'reviewerRole', 'revieweeId',
+        'rating', 'comment', 'isDemo', 'createdAt'
+      ]) &&
+      data.keys().hasOnly([
+        'taskId', 'taskTitle', 'reviewerId', 'reviewerName', 'reviewerRole',
+        'revieweeId', 'revieweeName', 'rating', 'comment', 'isDemo', 'createdAt'
+      ]) &&
+      isValidId(data.taskId) &&
+      (!('taskTitle' in data) || (data.taskTitle is string && data.taskTitle.size() <= 120)) &&
+      isValidId(data.reviewerId) &&
+      data.reviewerName is string && data.reviewerName.size() >= 2 && data.reviewerName.size() <= 80 &&
+      data.reviewerRole in ['student', 'poster'] &&
+      isValidId(data.revieweeId) &&
+      (!('revieweeName' in data) || (data.revieweeName is string && data.revieweeName.size() <= 80)) &&
+      data.rating is number && data.rating >= 1 && data.rating <= 5 &&
+      data.comment is string && data.comment.size() >= 3 && data.comment.size() <= 500 &&
+      data.isDemo is bool &&
+      data.createdAt is timestamp;
+    }
+
+    function isValidDispute(data) {
+      return data.keys().hasAll([
+        'reporterId', 'reporterName', 'type', 'reason', 'details', 'status',
+        'isDemo', 'createdAt', 'updatedAt'
+      ]) &&
+      data.keys().hasOnly([
+        'taskId', 'taskTitle', 'reporterId', 'reporterName', 'reportedUserId',
+        'type', 'reason', 'details', 'status', 'adminResolution', 'isDemo',
+        'createdAt', 'updatedAt'
+      ]) &&
+      (!('taskId' in data) || (data.taskId is string && data.taskId.size() <= 128)) &&
+      (!('taskTitle' in data) || (data.taskTitle is string && data.taskTitle.size() <= 120)) &&
+      isValidId(data.reporterId) &&
+      data.reporterName is string && data.reporterName.size() >= 2 && data.reporterName.size() <= 80 &&
+      (!('reportedUserId' in data) || (data.reportedUserId is string && data.reportedUserId.size() <= 128)) &&
+      data.type in ['task_report', 'user_report', 'payment_dispute', 'completion_dispute'] &&
+      data.reason is string && data.reason.size() >= 3 && data.reason.size() <= 120 &&
+      data.details is string && data.details.size() >= 5 && data.details.size() <= 1000 &&
+      data.status in ['open', 'under_review', 'resolved', 'dismissed'] &&
+      (!('adminResolution' in data) || (data.adminResolution is string && data.adminResolution.size() <= 500)) &&
+      data.isDemo is bool &&
+      data.createdAt is timestamp &&
+      data.updatedAt is timestamp;
+    }
+
+    function isValidAdminSettings(data) {
+      return data.keys().hasAll([
+        'commissionRatePct', 'variableCostInr', 'monthlyFixedCostInr',
+        'categories', 'demoModeBanner', 'updatedAt'
+      ]) &&
+      data.keys().hasOnly([
+        'commissionRatePct', 'variableCostInr', 'monthlyFixedCostInr',
+        'categories', 'demoModeBanner', 'updatedBy', 'updatedAt'
+      ]) &&
+      data.commissionRatePct is number && data.commissionRatePct >= 0 && data.commissionRatePct <= 40 &&
+      data.variableCostInr is number && data.variableCostInr >= 0 && data.variableCostInr <= 500 &&
+      data.monthlyFixedCostInr is number && data.monthlyFixedCostInr >= 0 && data.monthlyFixedCostInr <= 500000 &&
+      data.categories is list && data.categories.size() >= 1 && data.categories.size() <= 20 &&
+      data.categories[0] is string && data.categories[0].size() <= 60 &&
+      data.demoModeBanner is bool &&
+      (!('updatedBy' in data) || (data.updatedBy is string && data.updatedBy.size() <= 128)) &&
+      data.updatedAt is timestamp;
+    }
+
+    // --- Collection Rules ---
+
+    // Connection test helper doc
+    match /test/{docId} {
+      allow get: if isValidId(docId) && docId == 'connection';
+    }
+
+    // Public user profiles (NO PII)
+    match /users_public/{userId} {
+      allow get: if isValidId(userId) && (existing().isSuspended != true || isOwner(userId) || isAdmin());
+      allow list: if existing().isSuspended != true || isAdmin();
+      allow create: if isVerifiedAuth() && isValidId(userId) && isValidUserPublic(incoming()) &&
+        incoming().createdAt == request.time && incoming().updatedAt == request.time &&
+        (
+          isAdmin() ||
+          (
+            userId == request.auth.uid &&
+            incoming().uid == request.auth.uid &&
+            incoming().role in ['student', 'poster'] &&
+            incoming().isSuspended == false &&
+            incoming().isDemo == false &&
+            incoming().completedGigsCount == 0 &&
+            incoming().ratingsCount == 0 &&
+            incoming().averageRating == 0 &&
+            (
+              incoming().verificationStatus in ['unverified', 'pending'] ||
+              (
+                incoming().verificationStatus == 'verified' &&
+                request.auth.token.email.matches('.*@(dgu\\.ac\\.in|dbsglobaluniversity\\.ac\\.in|doonbusinessschool\\.com)$')
+              )
+            )
+          )
+        );
+      allow update: if isVerifiedAuth() && isValidId(userId) && isValidUserPublic(incoming()) &&
+        incoming().createdAt == existing().createdAt &&
+        incoming().updatedAt == request.time &&
+        incoming().uid == existing().uid &&
+        (
+          isAdmin() ||
+          (
+            userId == request.auth.uid &&
+            existing().isSuspended != true &&
+            incoming().role in ['student', 'poster'] &&
+            incoming().isSuspended == existing().isSuspended &&
+            incoming().isDemo == existing().isDemo &&
+            (
+              incoming().verificationStatus == existing().verificationStatus ||
+              (existing().verificationStatus in ['unverified', 'rejected'] && incoming().verificationStatus == 'pending')
+            ) &&
+            incoming().diff(existing()).affectedKeys().hasOnly([
+              'displayName', 'photoUrl', 'role', 'posterType', 'university',
+              'course', 'department', 'academicYear', 'hostelStatus', 'skills',
+              'bio', 'verificationStatus', 'updatedAt'
+            ])
+          )
+        );
+      allow delete: if isAdmin();
+    }
+
+    // Private PII records (Owner + Admin ONLY)
+    match /users_private/{userId} {
+      allow get: if isValidId(userId) && (isOwner(userId) || isAdmin());
+      allow list: if isAdmin() || (isVerifiedAuth() && existing().uid == request.auth.uid);
+      allow create: if isVerifiedAuth() && isValidId(userId) && isValidUserPrivate(incoming()) &&
+        incoming().createdAt == request.time && incoming().updatedAt == request.time &&
+        (isAdmin() || (userId == request.auth.uid && incoming().uid == request.auth.uid));
+      allow update: if isVerifiedAuth() && isValidId(userId) && isValidUserPrivate(incoming()) &&
+        incoming().createdAt == existing().createdAt &&
+        incoming().updatedAt == request.time &&
+        incoming().uid == existing().uid &&
+        (
+          isAdmin() ||
+          (
+            userId == request.auth.uid &&
+            incoming().diff(existing()).affectedKeys().hasOnly([
+              'universityEmail', 'personalEmail', 'studentId', 'mobileNumber',
+              'emailVerified', 'idVerificationMethod', 'verificationNote', 'upiId', 'updatedAt'
+            ])
+          )
+        );
+      allow delete: if isAdmin();
+    }
+
+    // Admin registry
+    match /admins/{userId} {
+      allow get: if isValidId(userId) && (isOwner(userId) || isAdmin());
+      allow list: if isAdmin();
+      allow create, update: if isAdmin() && isValidId(userId) && isValidAdminRecord(incoming());
+      allow delete: if isAdmin() && isValidId(userId);
+    }
+
+    // Campus gig listings
+    match /tasks/{taskId} {
+      allow get: if isValidId(taskId) && (existing().isRemoved != true || isAdmin());
+      allow list: if existing().isRemoved != true || isAdmin();
+      allow create: if isVerifiedAuth() && isValidId(taskId) && isValidTask(incoming()) &&
+        incoming().createdAt == request.time && incoming().updatedAt == request.time &&
+        incoming().status == 'open' &&
+        incoming().applicantCount == 0 &&
+        incoming().isRemoved == false &&
+        (
+          isAdmin() ||
+          (incoming().posterId == request.auth.uid && incoming().isDemo == false && isNotSuspended())
+        );
+      allow update: if isVerifiedAuth() && isValidId(taskId) && isValidTask(incoming()) &&
+        incoming().createdAt == existing().createdAt &&
+        incoming().updatedAt == request.time &&
+        incoming().posterId == existing().posterId &&
+        (
+          isAdmin() ||
+          (
+            !(existing().status in ['completed', 'cancelled']) &&
+            isNotSuspended() &&
+            (
+              // Poster edits open task
+              (
+                existing().posterId == request.auth.uid &&
+                existing().status == 'open' &&
+                incoming().diff(existing()).affectedKeys().hasOnly([
+                  'title', 'category', 'description', 'responsibilities', 'location',
+                  'budgetInr', 'estimatedDuration', 'durationMinutes', 'deadline',
+                  'workersRequired', 'skillsRequired', 'additionalInstructions',
+                  'attachmentLabel', 'updatedAt'
+                ])
+              ) ||
+              // Poster selects worker (open -> accepted)
+              (
+                existing().posterId == request.auth.uid &&
+                existing().status == 'open' &&
+                incoming().status == 'accepted' &&
+                incoming().assignedWorkerId is string &&
+                incoming().assignedWorkerId != existing().posterId &&
+                incoming().diff(existing()).affectedKeys().hasOnly([
+                  'status', 'assignedWorkerId', 'assignedWorkerName', 'updatedAt'
+                ])
+              ) ||
+              // Poster cancels task (open or accepted -> cancelled)
+              (
+                existing().posterId == request.auth.uid &&
+                existing().status in ['open', 'accepted'] &&
+                incoming().status == 'cancelled' &&
+                incoming().diff(existing()).affectedKeys().hasOnly([
+                  'status', 'cancellationReason', 'updatedAt'
+                ])
+              ) ||
+              // Assigned worker starts task (accepted -> in_progress)
+              (
+                existing().assignedWorkerId == request.auth.uid &&
+                existing().status == 'accepted' &&
+                incoming().status == 'in_progress' &&
+                incoming().diff(existing()).affectedKeys().hasOnly(['status', 'updatedAt'])
+              ) ||
+              // Assigned worker submits completion proof (in_progress -> submitted)
+              (
+                existing().assignedWorkerId == request.auth.uid &&
+                existing().status == 'in_progress' &&
+                incoming().status == 'submitted' &&
+                incoming().diff(existing()).affectedKeys().hasOnly([
+                  'status', 'completionProofNote', 'completionProofRef', 'updatedAt'
+                ])
+              ) ||
+              // Poster confirms completion (submitted -> completed)
+              (
+                existing().posterId == request.auth.uid &&
+                existing().status == 'submitted' &&
+                incoming().status == 'completed' &&
+                incoming().diff(existing()).affectedKeys().hasOnly(['status', 'updatedAt'])
+              ) ||
+              // Participant raises dispute
+              (
+                (existing().posterId == request.auth.uid || existing().assignedWorkerId == request.auth.uid) &&
+                existing().status in ['accepted', 'in_progress', 'submitted'] &&
+                incoming().status == 'disputed' &&
+                incoming().diff(existing()).affectedKeys().hasOnly(['status', 'updatedAt'])
+              ) ||
+              // Verified student adjusts applicantCount by 1 on apply/withdraw
+              (
+                isVerifiedStudent() &&
+                existing().status == 'open' &&
+                existing().posterId != request.auth.uid &&
+                (incoming().applicantCount == existing().applicantCount + 1 || incoming().applicantCount == existing().applicantCount - 1) &&
+                incoming().diff(existing()).affectedKeys().hasOnly(['applicantCount', 'updatedAt'])
+              )
+            )
+          )
+        );
+      allow delete: if isAdmin();
+    }
+
+    // Gig applications
+    match /applications/{applicationId} {
+      allow get: if isVerifiedAuth() && isValidId(applicationId) &&
+        (existing().applicantId == request.auth.uid || existing().posterId == request.auth.uid || isAdmin());
+      allow list: if isVerifiedAuth() &&
+        (existing().applicantId == request.auth.uid || existing().posterId == request.auth.uid || isAdmin());
+      allow create: if isVerifiedAuth() && isValidId(applicationId) && isValidApplication(incoming()) &&
+        incoming().createdAt == request.time && incoming().updatedAt == request.time &&
+        incoming().status == 'pending' &&
+        (
+          isAdmin() ||
+          (
+            isVerifiedStudent() &&
+            incoming().applicantId == request.auth.uid &&
+            incoming().posterId != request.auth.uid &&
+            exists(/databases/$(database)/documents/tasks/$(incoming().taskId)) &&
+            get(/databases/$(database)/documents/tasks/$(incoming().taskId)).data.status == 'open' &&
+            get(/databases/$(database)/documents/tasks/$(incoming().taskId)).data.posterId == incoming().posterId
+          )
+        );
+      allow update: if isVerifiedAuth() && isValidId(applicationId) && isValidApplication(incoming()) &&
+        incoming().createdAt == existing().createdAt &&
+        incoming().updatedAt == request.time &&
+        incoming().taskId == existing().taskId &&
+        incoming().applicantId == existing().applicantId &&
+        incoming().posterId == existing().posterId &&
+        (
+          isAdmin() ||
+          (
+            !(existing().status in ['accepted', 'rejected', 'withdrawn']) &&
+            (
+              (
+                existing().applicantId == request.auth.uid &&
+                existing().status in ['pending', 'shortlisted'] &&
+                incoming().status == 'withdrawn' &&
+                incoming().diff(existing()).affectedKeys().hasOnly(['status', 'updatedAt'])
+              ) ||
+              (
+                existing().posterId == request.auth.uid &&
+                existing().status in ['pending', 'shortlisted'] &&
+                incoming().status in ['shortlisted', 'accepted', 'rejected'] &&
+                incoming().diff(existing()).affectedKeys().hasOnly(['status', 'updatedAt'])
+              )
+            )
+          )
+        );
+      allow delete: if isAdmin();
+    }
+
+    // Payment & commission ledger
+    match /transactions/{transactionId} {
+      allow get: if isVerifiedAuth() && isValidId(transactionId) &&
+        (existing().posterId == request.auth.uid || existing().workerId == request.auth.uid || isAdmin());
+      allow list: if isVerifiedAuth() &&
+        (existing().posterId == request.auth.uid || existing().workerId == request.auth.uid || isAdmin());
+      allow create: if isVerifiedAuth() && isValidId(transactionId) && isValidTransaction(incoming()) &&
+        incoming().createdAt == request.time && incoming().updatedAt == request.time &&
+        (
+          isAdmin() ||
+          (
+            incoming().posterId == request.auth.uid &&
+            exists(/databases/$(database)/documents/tasks/$(incoming().taskId)) &&
+            get(/databases/$(database)/documents/tasks/$(incoming().taskId)).data.posterId == request.auth.uid &&
+            get(/databases/$(database)/documents/tasks/$(incoming().taskId)).data.assignedWorkerId == incoming().workerId
+          )
+        );
+      allow update: if isVerifiedAuth() && isValidId(transactionId) && isValidTransaction(incoming()) &&
+        incoming().createdAt == existing().createdAt &&
+        incoming().updatedAt == request.time &&
+        incoming().taskId == existing().taskId &&
+        incoming().posterId == existing().posterId &&
+        incoming().workerId == existing().workerId &&
+        (
+          isAdmin() ||
+          (
+            existing().status != 'completed' &&
+            (
+              (
+                existing().posterId == request.auth.uid &&
+                incoming().status == 'completed' &&
+                incoming().diff(existing()).affectedKeys().hasOnly(['status', 'upiReference', 'paymentMethod', 'updatedAt'])
+              ) ||
+              (
+                (existing().posterId == request.auth.uid || existing().workerId == request.auth.uid) &&
+                incoming().status == 'disputed' &&
+                incoming().diff(existing()).affectedKeys().hasOnly(['status', 'updatedAt'])
+              )
+            )
+          )
+        );
+      allow delete: if isAdmin();
+    }
+
+    // Notifications
+    match /notifications/{notificationId} {
+      allow get: if isVerifiedAuth() && isValidId(notificationId) &&
+        (existing().userId == request.auth.uid || isAdmin());
+      allow list: if isVerifiedAuth() &&
+        (existing().userId == request.auth.uid || isAdmin());
+      allow create: if isVerifiedAuth() && isValidId(notificationId) && isValidNotification(incoming()) &&
+        incoming().createdAt == request.time && isNotSuspended();
+      allow update: if isVerifiedAuth() && isValidId(notificationId) && isValidNotification(incoming()) &&
+        incoming().createdAt == existing().createdAt &&
+        incoming().userId == existing().userId &&
+        (
+          isAdmin() ||
+          (existing().userId == request.auth.uid && incoming().diff(existing()).affectedKeys().hasOnly(['isRead']))
+        );
+      allow delete: if isAdmin() || (isVerifiedAuth() && existing().userId == request.auth.uid);
+    }
+
+    // Task-scoped conversations
+    match /conversations/{conversationId} {
+      allow get: if isVerifiedAuth() && isValidId(conversationId) &&
+        (request.auth.uid in existing().participantIds || isAdmin());
+      allow list: if isVerifiedAuth() &&
+        (request.auth.uid in existing().participantIds || isAdmin());
+      allow create: if isVerifiedAuth() && isValidId(conversationId) && isValidConversation(incoming()) &&
+        incoming().createdAt == request.time && incoming().updatedAt == request.time &&
+        (
+          isAdmin() ||
+          (
+            request.auth.uid in incoming().participantIds &&
+            exists(/databases/$(database)/documents/tasks/$(incoming().taskId)) &&
+            get(/databases/$(database)/documents/tasks/$(incoming().taskId)).data.posterId == incoming().posterId &&
+            get(/databases/$(database)/documents/tasks/$(incoming().taskId)).data.assignedWorkerId == incoming().workerId
+          )
+        );
+      allow update: if isVerifiedAuth() && isValidId(conversationId) && isValidConversation(incoming()) &&
+        incoming().createdAt == existing().createdAt &&
+        incoming().updatedAt == request.time &&
+        incoming().participantIds == existing().participantIds &&
+        (
+          isAdmin() ||
+          (
+            request.auth.uid in existing().participantIds &&
+            incoming().diff(existing()).affectedKeys().hasOnly(['lastMessage', 'updatedAt'])
+          )
+        );
+      allow delete: if isAdmin();
+
+      match /messages/{messageId} {
+        allow get: if isVerifiedAuth() && isValidId(conversationId) && isValidId(messageId) &&
+          (
+            isAdmin() ||
+            request.auth.uid in get(/databases/$(database)/documents/conversations/$(conversationId)).data.participantIds
+          );
+        allow list: if isVerifiedAuth() &&
+          (isAdmin() || request.auth.uid in existing().participantIds);
+        allow create: if isVerifiedAuth() && isValidId(conversationId) && isValidId(messageId) &&
+          isValidMessage(incoming()) &&
+          incoming().createdAt == request.time &&
+          incoming().conversationId == conversationId &&
+          (
+            isAdmin() ||
+            (
+              incoming().senderId == request.auth.uid &&
+              exists(/databases/$(database)/documents/conversations/$(conversationId)) &&
+              incoming().participantIds == get(/databases/$(database)/documents/conversations/$(conversationId)).data.participantIds &&
+              request.auth.uid in get(/databases/$(database)/documents/conversations/$(conversationId)).data.participantIds
+            )
+          );
+        allow update, delete: if isAdmin();
+      }
+    }
+
+    // Two-way reviews
+    match /reviews/{reviewId} {
+      allow get: if isValidId(reviewId) && existing().rating >= 1 && existing().rating <= 5;
+      allow list: if existing().rating >= 1 && existing().rating <= 5;
+      allow create: if isVerifiedAuth() && isValidId(reviewId) && isValidReview(incoming()) &&
+        incoming().createdAt == request.time &&
+        (
+          isAdmin() ||
+          (
+            incoming().reviewerId == request.auth.uid &&
+            incoming().revieweeId != request.auth.uid &&
+            exists(/databases/$(database)/documents/tasks/$(incoming().taskId)) &&
+            get(/databases/$(database)/documents/tasks/$(incoming().taskId)).data.status == 'completed' &&
+            (
+              get(/databases/$(database)/documents/tasks/$(incoming().taskId)).data.posterId == request.auth.uid ||
+              get(/databases/$(database)/documents/tasks/$(incoming().taskId)).data.assignedWorkerId == request.auth.uid
+            )
+          )
+        );
+      allow update, delete: if isAdmin();
+    }
+
+    // Safety reports & disputes
+    match /disputes/{disputeId} {
+      allow get: if isVerifiedAuth() && isValidId(disputeId) &&
+        (existing().reporterId == request.auth.uid || existing().reportedUserId == request.auth.uid || isAdmin());
+      allow list: if isVerifiedAuth() &&
+        (existing().reporterId == request.auth.uid || existing().reportedUserId == request.auth.uid || isAdmin());
+      allow create: if isVerifiedAuth() && isValidId(disputeId) && isValidDispute(incoming()) &&
+        incoming().createdAt == request.time && incoming().updatedAt == request.time &&
+        incoming().status == 'open' &&
+        (isAdmin() || incoming().reporterId == request.auth.uid);
+      allow update: if isAdmin() && isValidId(disputeId) && isValidDispute(incoming()) &&
+        incoming().createdAt == existing().createdAt && incoming().updatedAt == request.time;
+      allow delete: if isAdmin();
+    }
+
+    // Platform commission & category settings
+    match /admin_settings/{settingId} {
+      allow get: if isValidId(settingId) && existing().commissionRatePct >= 0;
+      allow list: if existing().commissionRatePct >= 0;
+      allow create, update: if isAdmin() && isValidId(settingId) && isValidAdminSettings(incoming()) &&
+        incoming().updatedAt == request.time;
+      allow delete: if isAdmin();
+    }
+  }
+}

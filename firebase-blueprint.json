@@ -1,0 +1,310 @@
+{
+  "entities": {
+    "UserPublic": {
+      "title": "UserPublic",
+      "description": "Publicly visible CampusGig student or task poster profile without PII.",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "displayName": { "type": "string", "minLength": 2, "maxLength": 80 },
+        "photoUrl": { "type": "string", "maxLength": 500 },
+        "role": { "type": "string", "enum": ["student", "poster", "admin"] },
+        "posterType": { "type": "string", "enum": ["student", "department", "club", "business", "none"] },
+        "university": { "type": "string", "minLength": 2, "maxLength": 120 },
+        "course": { "type": "string", "maxLength": 80 },
+        "department": { "type": "string", "maxLength": 80 },
+        "academicYear": { "type": "string", "maxLength": 30 },
+        "hostelStatus": { "type": "string", "enum": ["hostel_resident", "day_scholar", "campus_entity"] },
+        "skills": { "type": "array", "description": "Up to 12 skill tags" },
+        "bio": { "type": "string", "maxLength": 400 },
+        "verificationStatus": { "type": "string", "enum": ["unverified", "pending", "verified", "rejected"] },
+        "isSuspended": { "type": "boolean" },
+        "completedGigsCount": { "type": "number" },
+        "postedGigsCount": { "type": "number" },
+        "averageRating": { "type": "number" },
+        "ratingsCount": { "type": "number" },
+        "isDemo": { "type": "boolean" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["uid", "displayName", "role", "verificationStatus", "isSuspended", "completedGigsCount", "averageRating", "ratingsCount", "isDemo", "createdAt", "updatedAt"]
+    },
+    "UserPrivate": {
+      "title": "UserPrivate",
+      "description": "Strictly isolated PII for CampusGig users (email, mobile, student ID).",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "universityEmail": { "type": "string", "maxLength": 120 },
+        "personalEmail": { "type": "string", "maxLength": 120 },
+        "studentId": { "type": "string", "maxLength": 40 },
+        "mobileNumber": { "type": "string", "maxLength": 20 },
+        "emailVerified": { "type": "boolean" },
+        "idVerificationMethod": { "type": "string", "enum": ["university_email", "manual_id_review", "none"] },
+        "verificationNote": { "type": "string", "maxLength": 300 },
+        "suspensionReason": { "type": "string", "maxLength": 300 },
+        "upiId": { "type": "string", "maxLength": 80 },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["uid", "universityEmail", "studentId", "mobileNumber", "emailVerified", "createdAt", "updatedAt"]
+    },
+    "AdminRecord": {
+      "title": "AdminRecord",
+      "description": "Authorized CampusGig administrator registry.",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "email": { "type": "string", "maxLength": 120 },
+        "grantedBy": { "type": "string", "maxLength": 128 },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["uid", "email", "createdAt"]
+    },
+    "Task": {
+      "title": "Task",
+      "description": "Hyper-local campus gig listing.",
+      "type": "object",
+      "properties": {
+        "posterId": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "posterName": { "type": "string", "minLength": 2, "maxLength": 80 },
+        "posterAvatar": { "type": "string", "maxLength": 500 },
+        "posterVerified": { "type": "boolean" },
+        "posterType": { "type": "string", "enum": ["student", "department", "club", "business"] },
+        "posterRating": { "type": "number" },
+        "title": { "type": "string", "minLength": 5, "maxLength": 120 },
+        "category": { "type": "string", "minLength": 2, "maxLength": 60 },
+        "description": { "type": "string", "minLength": 15, "maxLength": 2000 },
+        "responsibilities": { "type": "string", "maxLength": 1000 },
+        "location": { "type": "string", "minLength": 2, "maxLength": 120 },
+        "budgetInr": { "type": "number" },
+        "estimatedDuration": { "type": "string", "minLength": 2, "maxLength": 50 },
+        "durationMinutes": { "type": "number" },
+        "deadline": { "type": "string", "minLength": 4, "maxLength": 60 },
+        "workersRequired": { "type": "number" },
+        "skillsRequired": { "type": "array" },
+        "additionalInstructions": { "type": "string", "maxLength": 600 },
+        "attachmentLabel": { "type": "string", "maxLength": 200 },
+        "status": { "type": "string", "enum": ["open", "accepted", "in_progress", "submitted", "completed", "cancelled", "disputed"] },
+        "assignedWorkerId": { "type": "string", "maxLength": 128 },
+        "assignedWorkerName": { "type": "string", "maxLength": 80 },
+        "applicantCount": { "type": "number" },
+        "completionProofNote": { "type": "string", "maxLength": 600 },
+        "completionProofRef": { "type": "string", "maxLength": 300 },
+        "cancellationReason": { "type": "string", "maxLength": 300 },
+        "isRemoved": { "type": "boolean" },
+        "isDemo": { "type": "boolean" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["posterId", "posterName", "posterVerified", "posterType", "title", "category", "description", "location", "budgetInr", "estimatedDuration", "deadline", "workersRequired", "status", "applicantCount", "isRemoved", "isDemo", "createdAt", "updatedAt"]
+    },
+    "Application": {
+      "title": "Application",
+      "description": "Student application for a campus gig.",
+      "type": "object",
+      "properties": {
+        "taskId": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "taskTitle": { "type": "string", "minLength": 3, "maxLength": 120 },
+        "taskBudgetInr": { "type": "number" },
+        "taskLocation": { "type": "string", "maxLength": 120 },
+        "posterId": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "applicantId": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "applicantName": { "type": "string", "minLength": 2, "maxLength": 80 },
+        "applicantAvatar": { "type": "string", "maxLength": 500 },
+        "applicantCourse": { "type": "string", "maxLength": 80 },
+        "applicantRating": { "type": "number" },
+        "applicantVerified": { "type": "boolean" },
+        "message": { "type": "string", "minLength": 5, "maxLength": 600 },
+        "status": { "type": "string", "enum": ["pending", "shortlisted", "accepted", "rejected", "withdrawn"] },
+        "isDemo": { "type": "boolean" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["taskId", "taskTitle", "taskBudgetInr", "posterId", "applicantId", "applicantName", "applicantVerified", "message", "status", "isDemo", "createdAt", "updatedAt"]
+    },
+    "Transaction": {
+      "title": "Transaction",
+      "description": "Financial ledger and commission record for a completed or pending gig payout.",
+      "type": "object",
+      "properties": {
+        "taskId": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "taskTitle": { "type": "string", "minLength": 3, "maxLength": 120 },
+        "taskCategory": { "type": "string", "maxLength": 60 },
+        "posterId": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "posterName": { "type": "string", "maxLength": 80 },
+        "workerId": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "workerName": { "type": "string", "maxLength": 80 },
+        "grossAmountInr": { "type": "number" },
+        "commissionRatePct": { "type": "number" },
+        "platformCommissionInr": { "type": "number" },
+        "workerPayoutInr": { "type": "number" },
+        "variableCostInr": { "type": "number" },
+        "netContributionInr": { "type": "number" },
+        "paymentMethod": { "type": "string", "enum": ["upi_manual", "demo_simulated", "razorpay_ready"] },
+        "upiReference": { "type": "string", "maxLength": 80 },
+        "status": { "type": "string", "enum": ["pending_confirmation", "completed", "disputed", "refunded"] },
+        "isDemo": { "type": "boolean" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["taskId", "taskTitle", "posterId", "workerId", "grossAmountInr", "commissionRatePct", "platformCommissionInr", "workerPayoutInr", "variableCostInr", "netContributionInr", "paymentMethod", "status", "isDemo", "createdAt", "updatedAt"]
+    },
+    "Notification": {
+      "title": "Notification",
+      "description": "User activity notifications.",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "type": { "type": "string", "enum": ["application", "acceptance", "completion", "payment", "verification", "dispute", "message"] },
+        "title": { "type": "string", "minLength": 2, "maxLength": 120 },
+        "body": { "type": "string", "minLength": 2, "maxLength": 300 },
+        "linkPath": { "type": "string", "maxLength": 120 },
+        "relatedTaskId": { "type": "string", "maxLength": 128 },
+        "isRead": { "type": "boolean" },
+        "isDemo": { "type": "boolean" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["userId", "type", "title", "body", "isRead", "isDemo", "createdAt"]
+    },
+    "Conversation": {
+      "title": "Conversation",
+      "description": "Task-scoped conversation between poster and selected worker.",
+      "type": "object",
+      "properties": {
+        "taskId": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "taskTitle": { "type": "string", "minLength": 2, "maxLength": 120 },
+        "posterId": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "posterName": { "type": "string", "maxLength": 80 },
+        "workerId": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "workerName": { "type": "string", "maxLength": 80 },
+        "participantIds": { "type": "array", "description": "Exactly 2 UIDs [posterId, workerId]" },
+        "lastMessage": { "type": "string", "maxLength": 300 },
+        "isDemo": { "type": "boolean" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["taskId", "taskTitle", "posterId", "workerId", "participantIds", "isDemo", "createdAt", "updatedAt"]
+    },
+    "Message": {
+      "title": "Message",
+      "description": "Individual chat message inside a task conversation.",
+      "type": "object",
+      "properties": {
+        "conversationId": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "participantIds": { "type": "array", "description": "Exactly 2 UIDs copied from parent conversation" },
+        "senderId": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "senderName": { "type": "string", "minLength": 1, "maxLength": 80 },
+        "text": { "type": "string", "minLength": 1, "maxLength": 1000 },
+        "isDemo": { "type": "boolean" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["conversationId", "participantIds", "senderId", "senderName", "text", "isDemo", "createdAt"]
+    },
+    "Review": {
+      "title": "Review",
+      "description": "Rating and review left after task completion.",
+      "type": "object",
+      "properties": {
+        "taskId": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "taskTitle": { "type": "string", "maxLength": 120 },
+        "reviewerId": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "reviewerName": { "type": "string", "minLength": 2, "maxLength": 80 },
+        "reviewerRole": { "type": "string", "enum": ["student", "poster"] },
+        "revieweeId": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "revieweeName": { "type": "string", "maxLength": 80 },
+        "rating": { "type": "number" },
+        "comment": { "type": "string", "minLength": 3, "maxLength": 500 },
+        "isDemo": { "type": "boolean" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["taskId", "reviewerId", "reviewerName", "reviewerRole", "revieweeId", "rating", "comment", "isDemo", "createdAt"]
+    },
+    "Dispute": {
+      "title": "Dispute",
+      "description": "Reported suspicious task, user report, or payment/completion dispute.",
+      "type": "object",
+      "properties": {
+        "taskId": { "type": "string", "maxLength": 128 },
+        "taskTitle": { "type": "string", "maxLength": 120 },
+        "reporterId": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "reporterName": { "type": "string", "maxLength": 80 },
+        "reportedUserId": { "type": "string", "maxLength": 128 },
+        "type": { "type": "string", "enum": ["task_report", "user_report", "payment_dispute", "completion_dispute"] },
+        "reason": { "type": "string", "minLength": 3, "maxLength": 120 },
+        "details": { "type": "string", "minLength": 5, "maxLength": 1000 },
+        "status": { "type": "string", "enum": ["open", "under_review", "resolved", "dismissed"] },
+        "adminResolution": { "type": "string", "maxLength": 500 },
+        "isDemo": { "type": "boolean" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["reporterId", "reporterName", "type", "reason", "details", "status", "isDemo", "createdAt", "updatedAt"]
+    },
+    "AdminSettings": {
+      "title": "AdminSettings",
+      "description": "Platform-wide configurable financial and category settings.",
+      "type": "object",
+      "properties": {
+        "commissionRatePct": { "type": "number" },
+        "variableCostInr": { "type": "number" },
+        "monthlyFixedCostInr": { "type": "number" },
+        "categories": { "type": "array", "description": "Active gig categories (max 20)" },
+        "demoModeBanner": { "type": "boolean" },
+        "updatedBy": { "type": "string", "maxLength": 128 },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["commissionRatePct", "variableCostInr", "monthlyFixedCostInr", "categories", "demoModeBanner", "updatedAt"]
+    }
+  },
+  "firestore": {
+    "/users_public/{userId}": {
+      "schema": { "$ref": "#/entities/UserPublic" },
+      "description": "Public campus profiles without sensitive PII."
+    },
+    "/users_private/{userId}": {
+      "schema": { "$ref": "#/entities/UserPrivate" },
+      "description": "Owner/Admin-only PII such as university email, mobile number, and student ID."
+    },
+    "/admins/{userId}": {
+      "schema": { "$ref": "#/entities/AdminRecord" },
+      "description": "Authorized admin role markers."
+    },
+    "/tasks/{taskId}": {
+      "schema": { "$ref": "#/entities/Task" },
+      "description": "Campus gig marketplace listings."
+    },
+    "/applications/{applicationId}": {
+      "schema": { "$ref": "#/entities/Application" },
+      "description": "Student applications to tasks."
+    },
+    "/transactions/{transactionId}": {
+      "schema": { "$ref": "#/entities/Transaction" },
+      "description": "Completed and pending gig financial records."
+    },
+    "/notifications/{notificationId}": {
+      "schema": { "$ref": "#/entities/Notification" },
+      "description": "In-app notifications per user."
+    },
+    "/conversations/{conversationId}": {
+      "schema": { "$ref": "#/entities/Conversation" },
+      "description": "Authorized task participant conversations."
+    },
+    "/conversations/{conversationId}/messages/{messageId}": {
+      "schema": { "$ref": "#/entities/Message" },
+      "description": "Messages belonging to a task conversation."
+    },
+    "/reviews/{reviewId}": {
+      "schema": { "$ref": "#/entities/Review" },
+      "description": "Two-way ratings and reviews for completed tasks."
+    },
+    "/disputes/{disputeId}": {
+      "schema": { "$ref": "#/entities/Dispute" },
+      "description": "Safety reports and payment/task disputes."
+    },
+    "/admin_settings/{settingId}": {
+      "schema": { "$ref": "#/entities/AdminSettings" },
+      "description": "Platform commission and category configuration."
+    }
+  }
+}
